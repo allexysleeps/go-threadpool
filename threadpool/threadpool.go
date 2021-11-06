@@ -2,6 +2,7 @@ package threadpool
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 type TaskStatus uint8
@@ -16,7 +17,7 @@ type operation func()
 
 type Threadpool struct {
 	size          int
-	activeWorkers int
+	activeWorkers int32
 	queue         []*Task
 	workload      chan *Task
 	sync.RWMutex
@@ -32,20 +33,17 @@ func (tp *Threadpool) Run(op operation) *Task {
 		operation: op,
 	}
 
-	if tp.activeWorkers == tp.size {
+	tp.Lock()
+	defer tp.Unlock()
+	if tp.activeWorkers == int32(tp.size) {
 		task.status = StatusPending
-		tp.Lock()
 		tp.queue = append(tp.queue, &task)
-		tp.Unlock()
 		return &task
 	}
 
-	task.status = StatusRunning
-
-	tp.Lock()
 	tp.activeWorkers++
-	tp.Unlock()
 
+	task.status = StatusRunning
 	tp.workload <- &task
 
 	return &task
@@ -55,45 +53,41 @@ func (t *Task) Status() TaskStatus {
 	return t.status
 }
 
+func startWorker(tp *Threadpool) {
+	for {
+		select {
+		case task := <-tp.workload:
+			task.status = StatusRunning
+			task.operation()
+			task.status = StatusDone
+
+			atomic.AddInt32(&tp.activeWorkers, -1)
+		default:
+			tp.Lock()
+			if len(tp.queue) > 0 {
+				task := tp.queue[0]
+				tp.activeWorkers++
+				if len(tp.queue) == 1 {
+					tp.queue = tp.queue[:0]
+				} else {
+					tp.queue = tp.queue[1:len(tp.queue)]
+				}
+				tp.workload <- task
+			}
+			tp.Unlock()
+		}
+	}
+}
+
 func Create(count int) *Threadpool {
 	tp := Threadpool{
 		size:     count,
 		queue:    make([]*Task, 0),
-		workload: make(chan *Task),
+		workload: make(chan *Task, count),
 	}
 
 	for i := 0; i < count; i++ {
-		go func() {
-			for {
-				select {
-				case task := <-tp.workload:
-					task.status = StatusRunning
-					task.operation()
-					task.status = StatusDone
-
-					tp.Lock()
-					tp.activeWorkers--
-					tp.Unlock()
-				default:
-					var task *Task
-					tp.Lock()
-
-					if len(tp.queue) > 0 {
-						task = tp.queue[0]
-						tp.activeWorkers++
-						if len(tp.queue) == 1 {
-							tp.queue = []*Task{}
-						} else {
-							tp.queue = tp.queue[1:len(tp.queue)]
-						}
-					}
-					tp.Unlock()
-					if task != nil {
-						tp.workload <- task
-					}
-				}
-			}
-		}()
+		go startWorker(&tp)
 	}
 
 	return &tp

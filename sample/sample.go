@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -13,23 +14,23 @@ func main() {
 	seed := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(seed)
 
-	plannedOp := 50
+	plannedOp := 1000
 	performedOp := 0
 
 	var mu sync.Mutex
 
-	tp := threadpool.Create(5)
+	tp := threadpool.Create(4)
 
 	for i := 0; i < plannedOp; i++ {
 		func(idx int) {
 			tp.Run(func() {
-				delay := r.Intn(5)
+				delay := r.Intn(3)
 				time.Sleep(time.Second * time.Duration(delay))
-				fmt.Printf("operation #%d done\n", idx)
 
 				mu.Lock()
 				performedOp = performedOp + 1
 				mu.Unlock()
+				log.Printf("operation #%d finished, delay %d\n", idx, delay)
 			})
 		}(i)
 	}

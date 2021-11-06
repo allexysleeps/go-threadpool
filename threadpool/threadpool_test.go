@@ -1,32 +1,32 @@
 package threadpool
 
 import (
-	"sync"
+	"fmt"
 	"testing"
 	"time"
 )
 
 func TestCreate(t *testing.T) {
-	plannedOp := 10000
+	plannedOp := 100
 	performedOp := 0
-	var mu sync.Mutex
 
-	tp := Create(5)
+	tp := Create(4)
 
 	for i := 0; i < plannedOp; i++ {
 		func() {
 			tp.Run(func() {
-				mu.Lock()
+				time.Sleep(0)
 				performedOp++
-				mu.Unlock()
 			})
 		}()
+		fmt.Println(i)
 	}
 loop:
 	for {
 		select {
-		case <-time.After(time.Second * 5):
-			t.Errorf("treahdpool hasnt finished it 5s")
+		case <-time.After(time.Second):
+			t.Errorf("threadpool hasnt finished it 5s")
+			break loop
 		default:
 			if plannedOp == performedOp {
 				break loop
