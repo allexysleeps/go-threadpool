@@ -1,6 +1,7 @@
 package threadpool
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 )
@@ -26,6 +27,7 @@ type Threadpool struct {
 type Task struct {
 	status    TaskStatus
 	operation operation
+	ctx context.Context
 }
 
 func (tp *Threadpool) Run(op operation) *Task {
@@ -53,10 +55,15 @@ func (t *Task) Status() TaskStatus {
 	return t.status
 }
 
+func (t *Task) Cancel() {
+	// ...
+}
+
 func startWorker(tp *Threadpool) {
 	for {
 		select {
 		case task := <-tp.workload:
+
 			task.status = StatusRunning
 			task.operation()
 			task.status = StatusDone
