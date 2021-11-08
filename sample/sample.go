@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"math/rand"
 	"sync"
@@ -10,7 +10,7 @@ import (
 	"github.com/threadpool/threadpool"
 )
 
-func main() {
+func basicUsage() {
 	seed := rand.NewSource(time.Now().UnixNano())
 	r := rand.New(seed)
 
@@ -23,9 +23,10 @@ func main() {
 
 	for i := 0; i < plannedOp; i++ {
 		func(idx int) {
-			tp.Run(func() {
+			tp.Run(func(ctx context.Context) {
 				delay := r.Intn(3)
 				time.Sleep(time.Second * time.Duration(delay))
+				ctx.Done()
 
 				mu.Lock()
 				performedOp = performedOp + 1
@@ -35,8 +36,41 @@ func main() {
 		}(i)
 	}
 
-	fmt.Println("--------loaded chunk---------")
+	log.Println("--------loaded chunk---------")
 
 	for performedOp != plannedOp {
 	}
+}
+
+func canceledOperation() {
+	done := make(chan bool)
+	tp := threadpool.Create(2)
+	tsk := tp.Run(func(ctx context.Context) {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		for {
+			select {
+			case <-ctx.Done():
+				log.Printf("operation canceled")
+				close(done)
+				return
+			case <-ticker.C:
+				log.Print("operation is running")
+			}
+		}
+	})
+
+	log.Printf("task status %s\n", tsk.Status())
+
+	go func() {
+		time.Sleep(time.Second * 2)
+		log.Printf("task status %s\n", tsk.Status())
+		tsk.Stop()
+	}()
+
+	<-done
+	log.Printf("task status %s\n", tsk.Status())
+}
+
+func main() {
+	canceledOperation()
 }

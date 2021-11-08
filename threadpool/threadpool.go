@@ -6,67 +6,104 @@ import (
 	"sync/atomic"
 )
 
-type TaskStatus uint8
+func dummyId() func() uint8 {
+	mu := sync.Mutex{}
+	id := uint8(0)
+	return func() uint8 {
+		mu.Lock()
+		newId := id
+		id++
+		mu.Unlock()
+		return newId
+	}
+}
 
 const (
-	StatusPending TaskStatus = iota
-	StatusRunning
-	StatusDone
+	StatusPending  = "Pending"
+	StatusRunning  = "Running"
+	StatusDone     = "Done"
+	StatusCanceled = "Canceled"
 )
 
-type operation func()
+type Operation func(ctx context.Context)
 
 type Threadpool struct {
 	size          int
 	activeWorkers int32
 	queue         []*Task
 	workload      chan *Task
+	ctx           context.Context
+	genId         func() uint8
 	sync.RWMutex
 }
 
 type Task struct {
-	status    TaskStatus
-	operation operation
-	ctx context.Context
+	tp        *Threadpool
+	id        uint8
+	status    string
+	operation Operation
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
-func (tp *Threadpool) Run(op operation) *Task {
+func (tp *Threadpool) Run(op Operation) *Task {
+	ctx, cancel := context.WithCancel(tp.ctx)
 	task := Task{
+		id:        tp.genId(),
 		operation: op,
+		status:    StatusPending,
+		ctx:       ctx,
+		cancel:    cancel,
+		tp:        tp,
 	}
 
 	tp.Lock()
-	defer tp.Unlock()
-	if tp.activeWorkers == int32(tp.size) {
-		task.status = StatusPending
-		tp.queue = append(tp.queue, &task)
-		return &task
-	}
-
-	tp.activeWorkers++
-
-	task.status = StatusRunning
-	tp.workload <- &task
+	tp.queue = append(tp.queue, &task)
+	tp.Unlock()
 
 	return &task
 }
 
-func (t *Task) Status() TaskStatus {
-	return t.status
+func (t *Task) Status() string {
+	t.tp.RLock()
+	status := t.status
+	t.tp.RUnlock()
+	return status
 }
 
-func (t *Task) Cancel() {
-	// ...
+func (t *Task) Stop() {
+	t.tp.Lock()
+	defer t.tp.Unlock()
+
+	if t.status == StatusRunning {
+		t.cancel()
+		t.status = StatusCanceled
+		return
+	}
+	if t.status == StatusPending {
+		for i, tsk := range t.tp.queue {
+			if tsk.id == t.id {
+				if i == len(t.tp.queue)-1 {
+					t.tp.queue = t.tp.queue[:i-1]
+				} else {
+					t.tp.queue = append(t.tp.queue[0:i], t.tp.queue[i+1:len(t.tp.queue)]...)
+				}
+				t.status = StatusCanceled
+				return
+			}
+		}
+	}
 }
 
 func startWorker(tp *Threadpool) {
 	for {
 		select {
 		case task := <-tp.workload:
-
 			task.status = StatusRunning
-			task.operation()
-			task.status = StatusDone
+			task.operation(task.ctx)
+			if task.status != StatusCanceled {
+				task.status = StatusDone
+			}
 
 			atomic.AddInt32(&tp.activeWorkers, -1)
 		default:
@@ -91,6 +128,8 @@ func Create(count int) *Threadpool {
 		size:     count,
 		queue:    make([]*Task, 0),
 		workload: make(chan *Task, count),
+		ctx:      context.Background(),
+		genId:    dummyId(),
 	}
 
 	for i := 0; i < count; i++ {

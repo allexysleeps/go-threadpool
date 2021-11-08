@@ -1,6 +1,7 @@
 package threadpool
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ func TestCreate(t *testing.T) {
 
 	for i := 0; i < plannedOp; i++ {
 		func() {
-			tp.Run(func() {
+			tp.Run(func(ctx context.Context) {
 				time.Sleep(0)
 				performedOp++
 			})
