@@ -6,15 +6,15 @@ import (
 	"sync/atomic"
 )
 
-func dummyId() func() uint8 {
+func dummyID() func() uint8 {
 	mu := sync.Mutex{}
 	id := uint8(0)
 	return func() uint8 {
 		mu.Lock()
-		newId := id
+		newID := id
 		id++
 		mu.Unlock()
-		return newId
+		return newID
 	}
 }
 
@@ -33,7 +33,7 @@ type Threadpool struct {
 	queue         []*Task
 	workload      chan *Task
 	ctx           context.Context
-	genId         func() uint8
+	genID         func() uint8
 	sync.RWMutex
 }
 
@@ -49,7 +49,7 @@ type Task struct {
 func (tp *Threadpool) Run(op Operation) *Task {
 	ctx, cancel := context.WithCancel(tp.ctx)
 	task := Task{
-		id:        tp.genId(),
+		id:        tp.genID(),
 		operation: op,
 		status:    StatusPending,
 		ctx:       ctx,
@@ -75,12 +75,12 @@ func (t *Task) Stop() {
 	t.tp.Lock()
 	defer t.tp.Unlock()
 
-	if t.status == StatusRunning {
+	switch t.status {
+	case StatusRunning:
 		t.cancel()
 		t.status = StatusCanceled
 		return
-	}
-	if t.status == StatusPending {
+	case StatusPending:
 		for i, tsk := range t.tp.queue {
 			if tsk.id == t.id {
 				if i == len(t.tp.queue)-1 {
@@ -129,7 +129,7 @@ func Create(count int) *Threadpool {
 		queue:    make([]*Task, 0),
 		workload: make(chan *Task, count),
 		ctx:      context.Background(),
-		genId:    dummyId(),
+		genID:    dummyID(),
 	}
 
 	for i := 0; i < count; i++ {
