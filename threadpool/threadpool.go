@@ -82,15 +82,16 @@ func (t *Task) Stop() {
 		return
 	case StatusPending:
 		for i, tsk := range t.tp.queue {
-			if tsk.id == t.id {
-				if i == len(t.tp.queue)-1 {
-					t.tp.queue = t.tp.queue[:i-1]
-				} else {
-					t.tp.queue = append(t.tp.queue[0:i], t.tp.queue[i+1:len(t.tp.queue)]...)
-				}
-				t.status = StatusCanceled
-				return
+			if tsk.id != t.id {
+				continue
 			}
+			if i == len(t.tp.queue)-1 {
+				t.tp.queue = t.tp.queue[:i]
+			}
+			t.tp.queue = append(t.tp.queue[0:i], t.tp.queue[i+1:len(t.tp.queue)]...)
+
+			t.status = StatusCanceled
+			return
 		}
 	}
 }
@@ -104,7 +105,6 @@ func startWorker(tp *Threadpool) {
 			if task.status != StatusCanceled {
 				task.status = StatusDone
 			}
-
 			atomic.AddInt32(&tp.activeWorkers, -1)
 		default:
 			tp.Lock()
