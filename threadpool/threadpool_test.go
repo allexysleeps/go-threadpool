@@ -54,7 +54,7 @@ func TestThreadpool_Run(t *testing.T) {
 		}
 	}()
 
-	wg.Add(1)
+	wg.Add(2)
 	tp.Run(func(ctx context.Context) {
 		defer wg.Done()
 		for i := 0; i < 5; i++ {
@@ -62,7 +62,6 @@ func TestThreadpool_Run(t *testing.T) {
 		}
 	})
 
-	wg.Add(1)
 	tp.Run(func(ctx context.Context) {
 		defer wg.Done()
 		for i := 0; i < 5; i++ {
